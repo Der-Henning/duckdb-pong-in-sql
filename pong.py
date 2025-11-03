@@ -36,37 +36,37 @@ SETUP_SQL = """
 -- Game constants: field dimensions and paddle properties
 CREATE TEMP TABLE params AS
 SELECT
-  80 AS W,              -- Width of the playing field (characters)
-  25 AS H,              -- Height of the playing field (characters)
-  7 AS PADDLE_H,        -- Height of each paddle (characters)
-  2 AS PADDLE_SPEED;    -- How fast paddles can move per frame
+    80 AS W,              -- Width of the playing field (characters)
+    25 AS H,              -- Height of the playing field (characters)
+    7  AS PADDLE_H,       -- Height of each paddle (characters)
+    2  AS PADDLE_SPEED;   -- How fast paddles can move per frame
 
 -- Game state: positions, velocities, and scores
 -- This single row gets updated every frame with new positions
 CREATE TEMP TABLE state(
-  tick INTEGER,         -- Frame counter (increases each update)
-  ax INTEGER,           -- Player A paddle Y position (left side)
-  bx INTEGER,           -- Player B paddle Y position (right side)
-  ball_x INTEGER,       -- Ball X position (0 to W-1)
-  ball_y INTEGER,       -- Ball Y position (0 to H-1)
-  vx INTEGER,           -- Ball velocity in X direction (±1)
-  vy INTEGER,           -- Ball velocity in Y direction (-2, -1, 0, 1, 2)
-  score_a INTEGER,      -- Player A score
-  score_b INTEGER       -- Player B score
+    tick    INTEGER,      -- Frame counter (increases each update)
+    ax      INTEGER,      -- Player A paddle Y position (left side)
+    bx      INTEGER,      -- Player B paddle Y position (right side)
+    ball_x  INTEGER,      -- Ball X position (0 to W-1)
+    ball_y  INTEGER,      -- Ball Y position (0 to H-1)
+    vx      INTEGER,      -- Ball velocity in X direction (±1)
+    vy      INTEGER,      -- Ball velocity in Y direction (-2, -1, 0, 1, 2)
+    score_a INTEGER,      -- Player A score
+    score_b INTEGER       -- Player B score
 );
 
 -- Initialize game with random starting position and angle
 INSERT INTO state
 SELECT
-  0,                                                          -- tick = 0 (start)
-  (H-PADDLE_H)/2,                                            -- Player A paddle centered
-  (H-PADDLE_H)/2,                                            -- Player B paddle centered
-  W/2,                                                        -- Ball at horizontal center
-  CAST(H/2 + (random() * 6 - 3) AS INTEGER),                -- Ball Y: center ± 3 pixels
-  CASE WHEN random() < 0.5 THEN 1 ELSE -1 END,              -- Ball direction: random left/right
-  CAST((random() * 5 - 2) AS INTEGER),                      -- Ball angle: -2 to +2 (5 angles)
-  0,                                                          -- Score A = 0
-  0                                                           -- Score B = 0
+    0,                                                       -- tick = 0 (start)
+    (H-PADDLE_H)/2,                                          -- Player A paddle centered
+    (H-PADDLE_H)/2,                                          -- Player B paddle centered
+    W/2,                                                     -- Ball at horizontal center
+    CAST(H/2 + (random() * 6 - 3) AS INTEGER),               -- Ball Y: center ± 3 pixels
+    CASE WHEN random() < 0.5 THEN 1 ELSE -1 END,             -- Ball direction: random left/right
+    CAST((random() * 5 - 2) AS INTEGER),                     -- Ball angle: -2 to +2 (5 angles)
+    0,                                                       -- Score A = 0
+    0                                                        -- Score B = 0
 FROM params;
 """
 
@@ -78,132 +78,162 @@ TICK_SQL = """
 -- Use CTEs (Common Table Expressions) to break down the game logic into clear steps
 -- Each WITH clause is like a mini-table that feeds into the next step
 WITH
-  -- Load game parameters and current state for easy reference
-  p AS (SELECT * FROM params),
-  s AS (SELECT * FROM state),
+    -- Load game parameters and current state for easy reference
+    p AS (SELECT * FROM params),
+    s AS (SELECT * FROM state),
 
 -- STEP 1: AI DECISION - Calculate where each paddle should move
 -- The AI mimics human players: track defensively, then make strategic shots when close
 ai AS (
-  SELECT
-    -- PLAYER A (left side) - Decide where to move the paddle
-    CASE
-      -- When ball is CLOSE (≤5 pixels away) and approaching: attempt trick shots!
-      -- Position paddle to hit ball at specific zones for different angles
-      WHEN s.vx < 0 AND s.ball_x <= 5 THEN
+    SELECT
+        -- PLAYER A (left side) - Decide where to move the paddle
         CASE
-          WHEN random() < 0.25 THEN greatest(s.ball_y - 0, 1)  -- Hit top: steep up (vy=-2)
-          WHEN random() < 0.50 THEN greatest(s.ball_y - 1, 1)  -- Hit upper: diagonal up (vy=-1)
-          WHEN random() < 0.55 THEN greatest(s.ball_y - 3, 1)  -- Hit center: straight (vy=0) RARE!
-          WHEN random() < 0.75 THEN greatest(s.ball_y - 5, 1)  -- Hit lower: diagonal down (vy=+1)
-          ELSE greatest(s.ball_y - 6, 1)                        -- Hit bottom: steep down (vy=+2)
-        END
-      -- When ball is FAR: track defensively (85% accuracy for more scoring opportunities)
-      WHEN random() < 0.85 THEN
-        CASE WHEN s.ball_y < s.ax + 2 THEN greatest(s.ax - p.PADDLE_SPEED, 1)
-             WHEN s.ball_y > s.ax + p.PADDLE_H - 3 THEN least(s.ax + p.PADDLE_SPEED, p.H - p.PADDLE_H - 1)
-             ELSE s.ax END
-      -- 15% of the time: don't move (more imperfection for shorter games)
-      ELSE s.ax
-    END AS ax2,
-    -- PLAYER B (right side) - Same logic but mirrored
-    CASE 
-      WHEN {human} THEN
-        least(p.H - p.PADDLE_H, greatest(0, s.bx + {user_input} * p.PADDLE_SPEED))
-      ELSE
-        CASE
-          WHEN s.vx > 0 AND s.ball_x >= p.W - 6 THEN
+        -- When ball is CLOSE (≤5 pixels away) and approaching: attempt trick shots!
+        -- Position paddle to hit ball at specific zones for different angles
+        WHEN s.vx < 0 AND s.ball_x <= 5 THEN
             CASE
-              WHEN random() < 0.25 THEN greatest(s.ball_y - 0, 1)
-              WHEN random() < 0.50 THEN greatest(s.ball_y - 1, 1)
-              WHEN random() < 0.55 THEN greatest(s.ball_y - 3, 1)
-              WHEN random() < 0.75 THEN greatest(s.ball_y - 5, 1)
-              ELSE greatest(s.ball_y - 6, 1)
+                WHEN random() < 0.25 THEN greatest(s.ball_y - 0, 1)  -- Hit top: steep up (vy=-2)
+                WHEN random() < 0.50 THEN greatest(s.ball_y - 1, 1)  -- Hit upper: diagonal up (vy=-1)
+                WHEN random() < 0.55 THEN greatest(s.ball_y - 3, 1)  -- Hit center: straight (vy=0) RARE!
+                WHEN random() < 0.75 THEN greatest(s.ball_y - 5, 1)  -- Hit lower: diagonal down (vy=+1)
+                ELSE greatest(s.ball_y - 6, 1)                       -- Hit bottom: steep down (vy=+2)
             END
-          WHEN random() < 0.85 THEN
-            CASE WHEN s.ball_y < s.bx + 2 THEN greatest(s.bx - p.PADDLE_SPEED, 1)
-                WHEN s.ball_y > s.bx + p.PADDLE_H - 3 THEN least(s.bx + p.PADDLE_SPEED, p.H - p.PADDLE_H - 1)
-                ELSE s.bx END
-          ELSE s.bx
-        END
-    END AS bx2
-  FROM p, s
+        -- When ball is FAR: track defensively (85% accuracy for more scoring opportunities)
+        WHEN random() < 0.85 THEN
+            CASE
+                WHEN s.ball_y < s.ax + 2 THEN greatest(s.ax - p.PADDLE_SPEED, 1)
+                WHEN s.ball_y > s.ax + p.PADDLE_H - 3 THEN least(s.ax + p.PADDLE_SPEED, p.H - p.PADDLE_H - 1)
+                ELSE s.ax
+            END
+        -- 15% of the time: don't move (more imperfection for shorter games)
+        ELSE s.ax
+        END AS ax2,
+        -- PLAYER B (right side) - Same logic but mirrored
+        -- Can be controlled by human player
+        CASE
+        WHEN {human} THEN
+            least(p.H - p.PADDLE_H, greatest(0, s.bx + {user_input} * p.PADDLE_SPEED))
+        ELSE
+            CASE
+            WHEN s.vx > 0 AND s.ball_x >= p.W - 6 THEN
+                CASE
+                    WHEN random() < 0.25 THEN greatest(s.ball_y - 0, 1)
+                    WHEN random() < 0.50 THEN greatest(s.ball_y - 1, 1)
+                    WHEN random() < 0.55 THEN greatest(s.ball_y - 3, 1)
+                    WHEN random() < 0.75 THEN greatest(s.ball_y - 5, 1)
+                    ELSE greatest(s.ball_y - 6, 1)
+                END
+            WHEN random() < 0.85 THEN
+                CASE
+                    WHEN s.ball_y < s.bx + 2 THEN greatest(s.bx - p.PADDLE_SPEED, 1)
+                    WHEN s.ball_y > s.bx + p.PADDLE_H - 3 THEN least(s.bx + p.PADDLE_SPEED, p.H - p.PADDLE_H - 1)
+                    ELSE s.bx
+                END
+            ELSE s.bx
+            END
+        END AS bx2
+    FROM p, s
 ),
 
 -- STEP 2: BALL MOVEMENT - Move ball by its velocity
 step AS (
-  SELECT s.ball_x + s.vx AS nx, s.ball_y + s.vy AS ny, s.vx, s.vy FROM s
+    SELECT
+        s.ball_x + s.vx AS nx,
+        s.ball_y + s.vy AS ny,
+        s.vx,
+        s.vy
+    FROM s
 ),
 
 -- STEP 3: WALL COLLISION - Bounce ball off top/bottom walls
 wall AS (
-  SELECT
-    nx,
-    CASE WHEN ny <= 1 THEN 1 WHEN ny >= p.H-2 THEN p.H-2 ELSE ny END AS ny1,
-    vx AS vx1,
-    CASE WHEN ny <= 1 OR ny >= p.H-2 THEN -vy ELSE vy END AS vy1  -- Flip Y velocity
-  FROM step, p
+    SELECT
+        nx,
+        CASE WHEN ny <= 1 THEN 1 WHEN ny >= p.H-2 THEN p.H-2 ELSE ny END AS ny1,
+        vx AS vx1,
+        CASE WHEN ny <= 1 OR ny >= p.H-2 THEN -vy ELSE vy END AS vy1  -- Flip Y velocity
+    FROM step, p
 ),
 
 -- STEP 4: PADDLE COLLISION - Detect hits and calculate bounce angles
 -- This is the magic! Ball angle depends on WHERE it hits the paddle (classic Pong physics)
 paddle AS (
-  SELECT
-    w.nx, w.ny1,
-    -- Reverse horizontal direction if paddle hit
-    CASE
-      WHEN w.nx <= 1 AND w.vx1 < 0 AND w.ny1 BETWEEN ai.ax2 AND ai.ax2 + p.PADDLE_H - 1 THEN 1
-      WHEN w.nx >= p.W-2 AND w.vx1 > 0 AND w.ny1 BETWEEN ai.bx2 AND ai.bx2 + p.PADDLE_H - 1 THEN -1
-      ELSE w.vx1 END AS vx2,
-    -- Calculate new vertical velocity based on hit zone (5 zones on paddle)
-    -- Top edge = steep up (-2), Center = straight (0), Bottom edge = steep down (+2)
-    CASE
-      WHEN w.nx <= 1 AND w.vx1 < 0 AND w.ny1 BETWEEN ai.ax2 AND ai.ax2 + p.PADDLE_H - 1 THEN
-        CASE WHEN w.ny1 - ai.ax2 = 0 THEN -2      -- Position 0: top edge
-             WHEN w.ny1 - ai.ax2 <= 2 THEN -1     -- Positions 1-2: upper
-             WHEN w.ny1 - ai.ax2 <= 4 THEN 0      -- Positions 3-4: center
-             WHEN w.ny1 - ai.ax2 <= 5 THEN 1      -- Position 5: lower
-             ELSE 2 END                            -- Position 6: bottom edge
-      WHEN w.nx >= p.W-2 AND w.vx1 > 0 AND w.ny1 BETWEEN ai.bx2 AND ai.bx2 + p.PADDLE_H - 1 THEN
-        CASE WHEN w.ny1 - ai.bx2 = 0 THEN -2
-             WHEN w.ny1 - ai.bx2 <= 2 THEN -1
-             WHEN w.ny1 - ai.bx2 <= 4 THEN 0
-             WHEN w.ny1 - ai.bx2 <= 5 THEN 1
-             ELSE 2 END
-      ELSE w.vy1 END AS vy2,
-    ai.ax2 AS ax2, ai.bx2 AS bx2
-  FROM wall w, ai, p
+    SELECT
+        w.nx, w.ny1,
+        -- Reverse horizontal direction if paddle hit
+        CASE
+            WHEN w.nx <= 1     AND w.vx1 < 0 AND w.ny1 BETWEEN ai.ax2 AND ai.ax2 + p.PADDLE_H - 1 THEN 1
+            WHEN w.nx >= p.W-2 AND w.vx1 > 0 AND w.ny1 BETWEEN ai.bx2 AND ai.bx2 + p.PADDLE_H - 1 THEN -1
+            ELSE w.vx1
+        END AS vx2,
+        -- Calculate new vertical velocity based on hit zone (5 zones on paddle)
+        -- Top edge = steep up (-2), Center = straight (0), Bottom edge = steep down (+2)
+        CASE
+            WHEN w.nx <= 1 AND w.vx1 < 0 AND w.ny1 BETWEEN ai.ax2 AND ai.ax2 + p.PADDLE_H - 1 THEN
+                CASE
+                    WHEN w.ny1 - ai.ax2 =  0 THEN -2     -- Position 0: top edge
+                    WHEN w.ny1 - ai.ax2 <= 2 THEN -1     -- Positions 1-2: upper
+                    WHEN w.ny1 - ai.ax2 <= 4 THEN 0      -- Positions 3-4: center
+                    WHEN w.ny1 - ai.ax2 <= 5 THEN 1      -- Position 5: lower
+                    ELSE 2                               -- Position 6: bottom edge
+                END
+            WHEN w.nx >= p.W-2 AND w.vx1 > 0 AND w.ny1 BETWEEN ai.bx2 AND ai.bx2 + p.PADDLE_H - 1 THEN
+                CASE
+                    WHEN w.ny1 - ai.bx2 =  0 THEN -2
+                    WHEN w.ny1 - ai.bx2 <= 2 THEN -1
+                    WHEN w.ny1 - ai.bx2 <= 4 THEN 0
+                    WHEN w.ny1 - ai.bx2 <= 5 THEN 1
+                    ELSE 2
+                END
+            ELSE w.vy1
+        END AS vy2,
+        ai.ax2 AS ax2, ai.bx2 AS bx2
+    FROM wall w, ai, p
 ),
+
 -- STEP 5: SCORING - Detect if ball went past a paddle
 sc AS (
-  SELECT
-    CASE WHEN paddle.nx < 1 THEN 'B'              -- Ball past left: Player B scores
-         WHEN paddle.nx > p.W-2 THEN 'A'          -- Ball past right: Player A scores
-         ELSE NULL END AS point_to,               -- NULL = still in play
-    paddle.*, p.W, p.H
-  FROM paddle, p
+    SELECT
+        CASE
+            WHEN paddle.nx < 1 THEN 'B'              -- Ball past left: Player B scores
+            WHEN paddle.nx > p.W-2 THEN 'A'          -- Ball past right: Player A scores
+            ELSE NULL                                -- NULL = still in play
+        END AS point_to,
+        paddle.*, p.W, p.H
+    FROM paddle, p
 ),
 
 -- STEP 6: UPDATE STATE - Combine all changes and increment scores
 next_state AS (
-  SELECT
-    s.tick + 1 AS tick,                           -- Increment frame counter
-    sc.ax2 AS ax, sc.bx2 AS bx,                   -- New paddle positions
-    -- Ball position: reset to center if scored, otherwise use new position
-    CASE WHEN sc.point_to IS NULL THEN sc.nx
-         WHEN sc.point_to='A' THEN sc.W/2 + 1 ELSE sc.W/2 - 1 END AS ball_x,
-    CASE WHEN sc.point_to IS NULL THEN sc.ny1
-         ELSE CAST(sc.H/2 + (random() * 6 - 3) AS INTEGER) END AS ball_y,
-    -- Ball velocity: keep current if in play, otherwise random serve
-    CASE WHEN sc.point_to IS NULL THEN sc.vx2
-         WHEN sc.point_to='A' THEN -1 ELSE 1 END AS vx,
-    CASE WHEN sc.point_to IS NULL THEN sc.vy2
-         ELSE CAST((random() * 5 - 2) AS INTEGER) END AS vy,
-    -- Increment score if someone scored
-    s.score_a + COALESCE((sc.point_to='A')::INT, 0) AS score_a,
-    s.score_b + COALESCE((sc.point_to='B')::INT, 0) AS score_b
-  FROM sc, state s
+    SELECT
+        s.tick + 1 AS tick,                           -- Increment frame counter
+        sc.ax2 AS ax, sc.bx2 AS bx,                   -- New paddle positions
+        -- Ball position: reset to center if scored, otherwise use new position
+        CASE
+            WHEN sc.point_to IS NULL THEN sc.nx
+            WHEN sc.point_to='A' THEN sc.W/2 + 1
+            ELSE sc.W/2 - 1
+        END AS ball_x,
+        CASE
+            WHEN sc.point_to IS NULL THEN sc.ny1
+            ELSE CAST(sc.H/2 + (random() * 6 - 3) AS INTEGER)
+        END AS ball_y,
+        -- Ball velocity: keep current if in play, otherwise random serve
+        CASE
+            WHEN sc.point_to IS NULL THEN sc.vx2
+            WHEN sc.point_to='A' THEN -1
+            ELSE 1
+        END AS vx,
+        CASE
+            WHEN sc.point_to IS NULL THEN sc.vy2
+            ELSE CAST((random() * 5 - 2) AS INTEGER)
+        END AS vy,
+        -- Increment score if someone scored
+        s.score_a + COALESCE((sc.point_to='A')::INT, 0) AS score_a,
+        s.score_b + COALESCE((sc.point_to='B')::INT, 0) AS score_b
+    FROM sc, state s
 )
+
 -- Finally, write the new state back to the state table
 UPDATE state
 SET tick = n.tick, ax = n.ax, bx = n.bx,
@@ -223,11 +253,11 @@ SELECT y,
     string_agg(
         CASE
         WHEN y IN (0,p.H-1) THEN '▀'                                         -- Top/bottom borders
-        WHEN x=1 AND y BETWEEN s.ax AND s.ax + p.PADDLE_H - 1 THEN '█'      -- Player A paddle (left)
-        WHEN x=p.W-2 AND y BETWEEN s.bx AND s.bx + p.PADDLE_H - 1 THEN '█'  -- Player B paddle (right)
+        WHEN x=1 AND y BETWEEN s.ax AND s.ax + p.PADDLE_H - 1 THEN '█'       -- Player A paddle (left)
+        WHEN x=p.W-2 AND y BETWEEN s.bx AND s.bx + p.PADDLE_H - 1 THEN '█'   -- Player B paddle (right)
         WHEN x=s.ball_x AND y=s.ball_y THEN '█'                              -- Ball
         WHEN x=p.W/2 AND (y % 3)=1 THEN '█'                                  -- Center line (dotted)
-        ELSE ' '                                                              -- Empty space
+        ELSE ' '                                                             -- Empty space
         END, ''
     ) AS line
 FROM params p, state s, range(0,p.H) AS t_y(y), range(0,p.W) AS t_x(x)
@@ -252,7 +282,7 @@ DIGITS = {
 }
 
 
-def draw_digit(stdscr, digit, y, x, color_pair):
+def draw_digit(stdscr: curses.window, digit: int, y: int, x: int, color_pair: int):
     """Draw a large 3x5 digit at the given position."""
     if digit < 0 or digit > 9:
         return
@@ -320,26 +350,24 @@ def main(stdscr: curses.window):
         if key == Key.down or key == Key.up:
             user_input = 0
 
-    with Listener(
-            on_press=on_press,
-            on_release=on_release) as listener:
+    with Listener(on_press=on_press, on_release=on_release) as listener:
         while True:
             # Handle keyboard input
             ch = stdscr.getch()
             if ch == 27:  # ESC
                 break
-            if ch == ord('s') or ch == ord('S'):  # Toggle sound effects
+            if ch == ord("s") or ch == ord("S"):  # Toggle sound effects
                 sound_enabled = not sound_enabled
-            if ch == ord('h') or ch == ord('H'):
+            if ch == ord("h") or ch == ord("H"):  # Toggle human player
                 human = not human
-            elif ch == ord('+'):  # + key, double the framerate or go to max
+            elif ch == ord("+"):  # + key, double the framerate or go to max
                 if FPS == 120:
                     MAX_MODE = True
                     frame_dt = 0  # No frame limiting in max mode
                 elif not MAX_MODE:
                     FPS = FPS * 2
                     frame_dt = 1.0 / FPS
-            elif ch == ord('-'):  # - key, halve the framerate
+            elif ch == ord("-"):  # - key, halve the framerate
                 if MAX_MODE:
                     MAX_MODE = False
                     FPS = 120
@@ -361,14 +389,15 @@ def main(stdscr: curses.window):
                 try:
                     # Draw character by character to apply colors
                     for j, char in enumerate(line):
-                        if char == '█':
+                        if char == "█":
                             # Check if it's center line (at x=40) - make it grey
                             if j == 40:  # center line (W/2)
                                 stdscr.addstr(i, j, char, curses.color_pair(1))
                             else:  # paddles and ball - white
                                 stdscr.addstr(
-                                    i, j, char, curses.color_pair(2) | curses.A_BOLD)
-                        elif char == '▀':  # top and bottom borders
+                                    i, j, char, curses.color_pair(2) | curses.A_BOLD
+                                )
+                        elif char == "▀":  # top and bottom borders
                             stdscr.addstr(i, j, char, curses.color_pair(1))
                         else:
                             stdscr.addstr(i, j, char)
@@ -376,8 +405,7 @@ def main(stdscr: curses.window):
                     pass
 
             # Get scores and ball velocity for sound effects
-            a, b, vx = con.execute(
-                "SELECT score_a, score_b, vx FROM state").fetchone()
+            a, b, vx = con.execute("SELECT score_a, score_b, vx FROM state").fetchone()
 
             # Play sound effects if enabled (only up to 120 FPS, not in MAX mode)
             if sound_enabled and not MAX_MODE:
@@ -388,7 +416,9 @@ def main(stdscr: curses.window):
                 # Paddle hit sound - throttled to max 120 Hz to avoid overlap at high FPS
                 elif vx * prev_vx < 0:  # Sign changed = ball bounced off paddle
                     current_time = time.time()
-                    if (current_time - last_paddle_beep_time) >= MIN_PADDLE_BEEP_INTERVAL:
+                    if (
+                        current_time - last_paddle_beep_time
+                    ) >= MIN_PADDLE_BEEP_INTERVAL:
                         play_beep()  # Simple beep for paddle hit
                         last_paddle_beep_time = current_time
 
@@ -407,16 +437,20 @@ def main(stdscr: curses.window):
             # 4 chars per digit (3 width + 1 space)
             x_pos_a = 38 - (len(a_str) * 4 - 1)
             for i, digit_char in enumerate(a_str):
-                draw_digit(stdscr, int(digit_char), 1, x_pos_a +
-                           (i * 4), curses.color_pair(1))
+                draw_digit(
+                    stdscr, int(digit_char), 1, x_pos_a + (i * 4), curses.color_pair(1)
+                )
 
             # Draw Player B score (left-aligned, starting at x=43, y=1 for symmetry and classic look)
             for i, digit_char in enumerate(b_str):
-                draw_digit(stdscr, int(digit_char), 1, 43 +
-                           (i * 4), curses.color_pair(1))
+                draw_digit(
+                    stdscr, int(digit_char), 1, 43 + (i * 4), curses.color_pair(1)
+                )
 
             # Info text directly below the playing field - DuckPong title in yellow
-            info_text = "DuckPong - SQL engine playing Pong against itself (in SQL). Enjoy..."
+            info_text = (
+                "DuckPong - SQL engine playing Pong against itself (in SQL). Enjoy..."
+            )
             try:
                 stdscr.addstr(25, 0, info_text, curses.color_pair(4))
             except curses.error:
@@ -428,18 +462,19 @@ def main(stdscr: curses.window):
             try:
                 # Draw text in grey
                 stdscr.addstr(
-                    26, 0, "Press ESC to exit, S for sound [", curses.color_pair(1))
+                    26, 0, "Press ESC to exit, S for sound [", curses.color_pair(1)
+                )
                 # Sound status in yellow
                 stdscr.addstr(sound_status, curses.color_pair(4))
                 # Continue in grey
                 stdscr.addstr("], H for human player [", curses.color_pair(1))
+                # Human Player status in yellow
                 stdscr.addstr(human_status, curses.color_pair(4))
-
+                # Continue in grey
                 stdscr.addstr("], +/- for framerate [", curses.color_pair(1))
                 # FPS in yellow
                 if MAX_MODE:
-                    stdscr.addstr(f"{int(actual_fps)} fps MAX",
-                                  curses.color_pair(4))
+                    stdscr.addstr(f"{int(actual_fps)} fps MAX", curses.color_pair(4))
                 else:
                     stdscr.addstr(f"{FPS} fps", curses.color_pair(4))
                 # Close bracket in grey

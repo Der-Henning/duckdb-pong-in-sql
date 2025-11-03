@@ -48,6 +48,7 @@ python pong.py
 ### Controls
 - **ESC**: Quit
 - **S**: Toggle sound effects (classic score beeps)
+- **H**: Toggle human player
 - **+**: Double framerate (30 → 60 → 120 → MAX)
 - **-**: Halve framerate (back down to 15 FPS minimum)
 - **MAX mode**: Shows actual FPS the SQL engine can deliver (no frame limiting)
@@ -97,8 +98,7 @@ The AI mimics human behavior:
 - **Imperfect timing** (92% accuracy) for realistic gameplay
 - **Strategic angles**: Attempts steeps, diagonals, and rare straight shots
 
-## =
- Code Highlights
+## Code Highlights
 
 ### The Magic: Paddle Hit Zones
 
@@ -111,7 +111,7 @@ CASE
   WHEN hit_position <= 2 THEN -1     -- Upper: diagonal up �
   WHEN hit_position <= 4 THEN 0      -- Center: straight �
   WHEN hit_position <= 5 THEN 1      -- Lower: diagonal down �
-  ELSE 2                              -- Bottom: steep down �
+  ELSE 2                             -- Bottom: steep down �
 END AS vy
 ```
 
